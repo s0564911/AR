@@ -17,11 +17,12 @@ public class Controller : MonoBehaviour
     #region Attributes
 
     // FINALS
-    private const float targetWidth = 0.3f; // via cam
+    private const bool ARCore = true; // also change Vuforia Configuration > Android Settings
+    private const float targetWidth = 0.3f; // do it via cam foucs
     private const string KEY = "2a10JVA8VQCOwcSGlUKPc1yfe";
 
     private const string URL = "https://my-api.plantnet.org/v2/identify/all?api-key=" + KEY;
-    // private const string URL = "Test"; // enable for testing without api
+    // private const string URL = "Test"; // enable for testing without api, creates debug flowers
 
     // Welcome
     public GameObject _welcome;
@@ -30,8 +31,8 @@ public class Controller : MonoBehaviour
     public bool _firstTimeAdd;
     public bool _firstTimeJournal;
     public GameObject _intro;
-    // public GameObject _introAdd;
-    // public GameObject _introJournal;
+    public GameObject _introAdd;
+    public GameObject _introJournal;
 
     // Bottom
     public GameObject _bottom;
@@ -291,6 +292,8 @@ public class Controller : MonoBehaviour
 
     private void toggleFlash()
     {
+        // might or might not work, depending on device
+        // how to find out and disable?
         if (flashState == false)
         {
             CameraDevice.Instance.SetFlashTorchMode(true);
@@ -318,10 +321,10 @@ public class Controller : MonoBehaviour
         btn_stopAddDetails.onClick.AddListener(stopAddScreenshot);
         btn_addScreenshot.onClick.RemoveAllListeners();
         btn_addScreenshot.onClick.AddListener(delegate { addScreenshot(currentFlower); });
-        
+
         if (!_firstTimeAdd)
         {
-            // _introAdd.SetActive(true);
+            _introAdd.SetActive(true);
             _firstTimeAdd = true;
         }
     }
@@ -365,10 +368,10 @@ public class Controller : MonoBehaviour
             if (child.gameObject.activeSelf)
                 child.gameObject.SetActive(false);
         }
-        
+
         if (!_firstTimeJournal)
         {
-            // _introJournal.SetActive(true);
+            _introJournal.SetActive(true);
             _firstTimeJournal = true;
         }
     }
@@ -639,10 +642,10 @@ public class Controller : MonoBehaviour
 
             child.gameObject.SetActive(false);
         }
-        
+
         if (!_firstTimeAdd)
         {
-            // _introAdd.SetActive(true);
+            _introAdd.SetActive(true);
             _firstTimeAdd = true;
         }
     }
@@ -750,17 +753,25 @@ public class Controller : MonoBehaviour
             // add the DefaultTrackableEventHandler to the readily existing flower
             GameObject o;
             (o = trackableBehaviour.gameObject).AddComponent<DefaultTrackableEventHandler>();
-            o.GetComponent<DefaultTrackableEventHandler>().StatusFilter = DefaultTrackableEventHandler
-                .TrackingStatusFilter.Tracked_ExtendedTracked; // ToDo
+            if (ARCore)
+                o.GetComponent<DefaultTrackableEventHandler>().StatusFilter = DefaultTrackableEventHandler
+                    .TrackingStatusFilter.Tracked_ExtendedTracked; // ToDo
+            else
+                o.GetComponent<DefaultTrackableEventHandler>().StatusFilter = DefaultTrackableEventHandler
+                    .TrackingStatusFilter.Tracked;
+
             o.transform.parent = GameObject.Find(flower.guid).transform;
 
             _objectTracker.ActivateDataSet(flower.dataset);
-
-            // setup target events
+            
+            // add custom event handler
             VuforiaTargetEvents events = o.AddComponent<VuforiaTargetEvents>();
             events.controller = this;
             events.flower = flower;
-            events.StatusFilter = DefaultTrackableEventHandler.TrackingStatusFilter.Tracked_ExtendedTracked;
+            if (ARCore)
+                events.StatusFilter = DefaultTrackableEventHandler.TrackingStatusFilter.Tracked_ExtendedTracked;
+            else
+                events.StatusFilter = DefaultTrackableEventHandler.TrackingStatusFilter.Tracked;
 
             int count = flower.dataset.GetTrackables().Count();
             _outOf.text = count + "/5";
@@ -932,21 +943,25 @@ public class Controller : MonoBehaviour
         {
             var trackableBehaviour = flower.dataset.CreateTrackable(runtimeImageSource, flower.guid);
 
-            // flower.target = trackableBehaviour.gameObject;
-
             // add the DefaultTrackableEventHandler to the newly created flower
             GameObject o;
             (o = trackableBehaviour.gameObject).AddComponent<DefaultTrackableEventHandler>();
             o.transform.tag = "Target";
-            o.GetComponent<DefaultTrackableEventHandler>().StatusFilter = DefaultTrackableEventHandler
-                .TrackingStatusFilter.Tracked_ExtendedTracked; //ToDo
-            // o.AddComponent<FaceCamera>();
+            if (ARCore)
+                o.GetComponent<DefaultTrackableEventHandler>().StatusFilter = DefaultTrackableEventHandler
+                    .TrackingStatusFilter.Tracked_ExtendedTracked; // ToDo
+            else
+                o.GetComponent<DefaultTrackableEventHandler>().StatusFilter = DefaultTrackableEventHandler
+                    .TrackingStatusFilter.Tracked;
 
-
+            // add custom event handler
             VuforiaTargetEvents events = o.AddComponent<VuforiaTargetEvents>();
             events.controller = this;
             events.flower = flower;
-            events.StatusFilter = DefaultTrackableEventHandler.TrackingStatusFilter.Tracked_ExtendedTracked;
+            if (ARCore)
+                events.StatusFilter = DefaultTrackableEventHandler.TrackingStatusFilter.Tracked_ExtendedTracked;
+            else
+                events.StatusFilter = DefaultTrackableEventHandler.TrackingStatusFilter.Tracked;
 
             flower.trackable = o;
 
@@ -959,9 +974,7 @@ public class Controller : MonoBehaviour
         }
 
         // activate the dataset
-        // _objectTracker.Stop(); //~
         _objectTracker.ActivateDataSet(flower.dataset);
-        // _objectTracker.Start(); //~
 
         // add virtual content as child object(s)
         // ToDo ... serialize right!
@@ -1459,7 +1472,7 @@ public class Controller : MonoBehaviour
             _firstTime = true;
             saveFlowers(_flowers, file_path);
         }
-        
+
         _objectTracker.Start();
     }
 
