@@ -16,10 +16,12 @@ public class Controller : MonoBehaviour
 {
     #region Attributes
 
-    // FINALS
-    private const bool ARCore = true; // also change Vuforia Configuration > Android Settings
-    private const float targetWidth = 0.3f; // do it via cam foucs
-    private const string KEY = "2a10JVA8VQCOwcSGlUKPc1yfe";
+    // Settings
+    public bool ARCore = true; // also change Vuforia Configuration > Android Settings
+    public bool lowQualityIcons = false; // low quality means 2D sprites instead of 3D models and no animations
+    public bool debugOutput = true;
+    public float targetWidth = 0.3f; // do it via cam foucs
+    private const string KEY = "2a10JVA8VQCOwcSGlUKPc1yfe"; // 50 Flowers / Day / Key for free
 
     private const string URL = "https://my-api.plantnet.org/v2/identify/all?api-key=" + KEY;
     // private const string URL = "Test"; // enable for testing without api, creates debug flowers
@@ -43,6 +45,7 @@ public class Controller : MonoBehaviour
     public Text _count;
     private GameObject flashLight;
     private bool flashState;
+    private AndroidJavaObject camera1;
     public Button btn_toggleAdd;
     public bool addState;
 
@@ -76,7 +79,7 @@ public class Controller : MonoBehaviour
     public Text _outOf;
 
     public Text _lastWatered;
-    // private Text _debug;
+    public Text _debug;
 
 
     // Data
@@ -116,8 +119,11 @@ public class Controller : MonoBehaviour
         btn_showFlowers.onClick.AddListener(showFlowers);
 
         _text = GameObject.Find("DisplayText").GetComponent<Text>();
+        if (!debugOutput)
+            _debug.gameObject.SetActive(false);
         // _debug = GameObject.Find("Debug").GetComponent<Text>();
-        _icons = GameObject.Find("Icons").gameObject;
+        _icons = lowQualityIcons ? GameObject.Find("Icons_low") : GameObject.Find("Icons").gameObject;
+
         _backWork = GameObject.Find("Back_Work").gameObject;
         _backDetails = GameObject.Find("Back_Details").gameObject;
 
@@ -296,16 +302,67 @@ public class Controller : MonoBehaviour
         // how to find out and disable?
         if (flashState == false)
         {
-            CameraDevice.Instance.SetFlashTorchMode(true);
+            try
+            {
+                CameraDevice.Instance.SetFlashTorchMode(true);
+                flashState = true;
+            }
+            catch (Exception e)
+            {
+                FL_Start();
+            }
+        }
+        else
+        {
+            try
+            {
+                CameraDevice.Instance.SetFlashTorchMode(false);
+                flashState = false;
+            }
+            catch (Exception e)
+            {
+                FL_Stop();
+            }
+        }
+
+        flashLight.SetActive(flashState);
+    }
+    
+    void FL_Start()
+    {
+        AndroidJavaClass cameraClass = new AndroidJavaClass("android.hardware.Camera");       
+        WebCamDevice[] devices = WebCamTexture.devices;
+
+        int camID = 0;
+        camera1 = cameraClass.CallStatic<AndroidJavaObject>("open", camID);
+
+        if (camera1 != null)
+        {
+            AndroidJavaObject cameraParameters = camera1.Call<AndroidJavaObject>("getParameters");
+            cameraParameters.Call("setFlashMode", "torch");
+            camera1.Call("setParameters", cameraParameters);
+            camera1.Call("startPreview");
             flashState = true;
         }
         else
         {
-            CameraDevice.Instance.SetFlashTorchMode(false);
+            _debug.text = _debug.text + Environment.NewLine + "[CameraParametersAndroid] Camera not available";
+            btn_toggleAdd.gameObject.SetActive(false);
+        }
+    }
+    
+    void FL_Stop()
+    {
+        if (camera1 != null)
+        {
+            camera1.Call("stopPreview");
+            camera1.Call("release");
             flashState = false;
         }
-
-        flashLight.SetActive(flashState);
+        else
+        {
+            _debug.text = _debug.text + Environment.NewLine + "[CameraParametersAndroid] Camera not available";
+        }
     }
 
     private void toggleAdd()
@@ -552,6 +609,7 @@ public class Controller : MonoBehaviour
         }
 
         // btn_addDetails.onClick.AddListener(delegate { addDetailsScreenshot(_flowers[i]); });
+        btn_deleteOne.onClick.RemoveAllListeners();
         btn_deleteOne.onClick.AddListener(delegate { deleteOne(_flowers[y]); });
 
         if (_flowers[y].lastWatered != null)
@@ -730,6 +788,7 @@ public class Controller : MonoBehaviour
         else if (flower.screen_path_5 == null)
             index = 5;
         AddMarker(flower, screen_path, guid);
+        yield return null;
     }
 
     void AddMarker(Flower flower, string screen_path, string guid)
@@ -763,7 +822,7 @@ public class Controller : MonoBehaviour
             o.transform.parent = GameObject.Find(flower.guid).transform;
 
             _objectTracker.ActivateDataSet(flower.dataset);
-            
+
             // add custom event handler
             VuforiaTargetEvents events = o.AddComponent<VuforiaTargetEvents>();
             events.controller = this;
@@ -816,6 +875,9 @@ public class Controller : MonoBehaviour
         tex.ReadPixels(new Rect(0, 0, width, height), 0, 0);
         tex.Apply();
 
+        // Informs user
+        _text.text = "Processing...";
+
         // Upload image to API as byte array.
         byte[] bytes = tex.EncodeToPNG();
         StartCoroutine(UploadImage(URL, bytes, flower));
@@ -837,6 +899,8 @@ public class Controller : MonoBehaviour
         File.WriteAllBytes(flower.screen_path, bytes);
         File.WriteAllBytes(flower.small_path, flower.texSmall.EncodeToPNG());
         // _debug.text = _debug.text + Environment.NewLine + "Screenshot (" + screen_path + ") saved!";
+        // yield return null;
+        StopCoroutine(TakeScreenshot(flower));
     }
 
     private IEnumerator UploadImage(string url, byte[] bodyRaw, Flower flower)
@@ -902,6 +966,9 @@ public class Controller : MonoBehaviour
                 }
             }
         }
+
+        // yield return null;
+        StopCoroutine(UploadImage(url, bodyRaw, flower));
     }
 
     private static Texture2D Resize(Texture2D source, int newWidth, int newHeight)
@@ -1027,6 +1094,10 @@ public class Controller : MonoBehaviour
                 }
             }
         }
+
+        _debug.text = _debug.text + Environment.NewLine + flower.display + ": Data collected";
+        yield return null;
+        // StopCoroutine(getData(flower, search_term, update));
     }
 
     private IEnumerator getTables(Flower flower, string hit, bool update)
@@ -1136,19 +1207,26 @@ public class Controller : MonoBehaviour
                 if (flower.details.Equals(string.Empty) && !searched_again)
                 {
                     searched_again = true;
+                    _debug.text = _debug.text + Environment.NewLine + flower.display + ": Searching again";
                     StartCoroutine(getData(flower,
                         flower.latin.Split(new[] {" "}, StringSplitOptions.RemoveEmptyEntries)[0], update));
                 }
+                else
+                {
+                    searched_again = false;
 
-                searched_again = false;
+                    if (flower.lastWatered.Equals(DateTime.MinValue.ToString(CultureInfo.InvariantCulture)))
+                        flower.lastWatered = DateTime.Today.Subtract(new TimeSpan(5, 0, 0, 0))
+                            .ToString(CultureInfo.InvariantCulture);
 
-                if (flower.lastWatered.Equals(DateTime.MinValue.ToString(CultureInfo.InvariantCulture)))
-                    flower.lastWatered = DateTime.Today.Subtract(new TimeSpan(5, 0, 0, 0))
-                        .ToString(CultureInfo.InvariantCulture);
-
-                StartCoroutine(finalizeLoading(flower, update));
+                    _debug.text = _debug.text + Environment.NewLine + flower.display + ": Data read";
+                    StartCoroutine(finalizeLoading(flower, update));
+                }
             }
         }
+
+        // yield return null;
+        StopCoroutine(getTables(flower, hit, update));
     }
 
     #endregion
@@ -1157,47 +1235,129 @@ public class Controller : MonoBehaviour
 
     private IEnumerator finalizeLoading(Flower flower, bool update)
     {
-        yield return new WaitForEndOfFrame();
-
-        if (_flowers.Count < 7)
-            setSprite(flower, _flowers.Count);
-
-        _icons.GetComponent<Icons>().flower = flower;
-
-        setUpIcons(Instantiate(_icons, GameObject.Find(flower.guid).transform, false).GetComponent<Icons>(), flower,
-            update);
-
-        if (flower.screen_path_2 != null && !flower.screen_path_2.Equals(string.Empty))
+        GameObject targetFlower = GameObject.Find(flower.guid);
+        if (targetFlower.transform.childCount < 1)
         {
             yield return new WaitForEndOfFrame();
-            AddMarker(flower, flower.screen_path_2, flower.guid2);
+
+            if (_flowers.Count < 7)
+                setSprite(flower, _flowers.Count);
+
+            _icons.GetComponent<Icons>().flower = flower;
+
+            _debug.text = _debug.text + Environment.NewLine + flower.display + ": Creating Icons ...";
+            try
+            {
+                setUpIcons(Instantiate(_icons, targetFlower.transform, false).GetComponent<Icons>(), flower,
+                    update);
+            }
+            catch (Exception e)
+            {
+                _debug.text = _debug.text + Environment.NewLine + flower.display + ": " + e.Message;
+                throw;
+            }
+
+            yield return new WaitForEndOfFrame();
+            try
+            {
+                if (flower.screen_path_2 != null && !flower.screen_path_2.Equals(string.Empty))
+                    AddMarker(flower, flower.screen_path_2, flower.guid2);
+            }
+            catch (Exception e)
+            {
+                _debug.text = _debug.text + Environment.NewLine + flower.display + ": " + e.Message;
+                throw;
+            }
+
+            yield return new WaitForEndOfFrame();
+            try
+            {
+                if (flower.screen_path_3 != null && !flower.screen_path_3.Equals(string.Empty))
+                    AddMarker(flower, flower.screen_path_3, flower.guid3);
+            }
+            catch (Exception e)
+            {
+                _debug.text = _debug.text + Environment.NewLine + flower.display + ": " + e.Message;
+                throw;
+            }
+
+            yield return new WaitForEndOfFrame();
+            try
+            {
+                if (flower.screen_path_4 != null && !flower.screen_path_4.Equals(string.Empty))
+                    AddMarker(flower, flower.screen_path_4, flower.guid4);
+            }
+            catch (Exception e)
+            {
+                _debug.text = _debug.text + Environment.NewLine + flower.display + ": " + e.Message;
+                throw;
+            }
+
+            yield return new WaitForEndOfFrame();
+            try
+            {
+                if (flower.screen_path_5 != null && !flower.screen_path_5.Equals(string.Empty))
+                    AddMarker(flower, flower.screen_path_5, flower.guid5);
+            }
+            catch (Exception e)
+            {
+                _debug.text = _debug.text + Environment.NewLine + flower.display + ": " + e.Message;
+                throw;
+            }
         }
 
-        if (flower.screen_path_3 != null && !flower.screen_path_3.Equals(string.Empty))
-        {
-            yield return new WaitForEndOfFrame();
-            AddMarker(flower, flower.screen_path_3, flower.guid3);
-        }
-
-        if (flower.screen_path_4 != null && !flower.screen_path_4.Equals(string.Empty))
-        {
-            yield return new WaitForEndOfFrame();
-            AddMarker(flower, flower.screen_path_4, flower.guid4);
-        }
-
-        if (flower.screen_path_5 != null && !flower.screen_path_5.Equals(string.Empty))
-        {
-            yield return new WaitForEndOfFrame();
-            AddMarker(flower, flower.screen_path_5, flower.guid5);
-        }
+        _debug.text = _debug.text + Environment.NewLine + flower.display + ": Icons created";
+        StopCoroutine(finalizeLoading(flower, update));
     }
 
-    private static void setUpIcons(Icons icons, Flower flower, bool update)
+    private void setUpIcons(Icons icons, Flower flower, bool update)
     {
         // lastWatered
         icons.flower = flower;
         flower.icons = icons;
-        int diff = (DateTime.Now - Convert.ToDateTime(flower.lastWatered)).Days;
+        int diff = 0;
+        try
+        {
+            diff = (DateTime.Now - Convert.ToDateTime(flower.lastWatered)).Days;
+        }
+        catch (Exception e)
+        {
+            _debug.text = _debug.text + Environment.NewLine + flower.display + ": " + e.Message;
+            try
+            {
+                _debug.text = _debug.text + Environment.NewLine + flower.display + ": trying german ...";
+                _debug.text = _debug.text + Environment.NewLine + flower.display + ": Saved " + flower.lastWatered;
+                _debug.text = _debug.text + Environment.NewLine + flower.display + ": Now " + DateTime.Now;
+                
+                int last = Convert.ToInt32(flower.lastWatered.Split(new[] {"."}, StringSplitOptions.RemoveEmptyEntries)[0]);
+                int now = DateTime.Now.Day;
+                diff = now - last;
+                if (diff < 0)
+                    diff = -diff;
+                
+                _debug.text = _debug.text + Environment.NewLine + flower.display + ": Now (int) " + now;
+                _debug.text = _debug.text + Environment.NewLine + flower.display + ": Last (int) " + last;
+                _debug.text = _debug.text + Environment.NewLine + flower.display + ": Diff (int) " + diff;
+                _debug.text = _debug.text + Environment.NewLine + "cut";
+            }
+            catch (Exception f)
+            {
+                _debug.text = _debug.text + Environment.NewLine + flower.display + ": " + f.Message;
+                _debug.text = _debug.text + Environment.NewLine + flower.display + ": trying american ...";
+                
+                int last = Convert.ToInt32(flower.lastWatered.Split(new[] {"/"}, StringSplitOptions.RemoveEmptyEntries)[1]);
+                int now = DateTime.Now.Day;
+                diff = now - last;
+                if (diff < 0)
+                    diff = -diff;
+                
+                _debug.text = _debug.text + Environment.NewLine + flower.display + ": Now (int) " + now;
+                _debug.text = _debug.text + Environment.NewLine + flower.display + ": Last (int) " + last;
+                _debug.text = _debug.text + Environment.NewLine + flower.display + ": Diff (int) " + diff;
+                _debug.text = _debug.text + Environment.NewLine + "cut";
+            }
+        }
+        
         if (diff < 1)
             icons.none.SetActive(true);
         else if (diff > 1 && diff <= 2)
@@ -1386,6 +1546,7 @@ public class Controller : MonoBehaviour
         // flower.icons4 = icons;
         // flower.icons5 = icons;
 
+        _debug.text = _debug.text + Environment.NewLine + flower.display + ": Icons setup";
         flower.rdy_icons = true;
         if (update)
             icons.all.SetActive(true);
@@ -1452,6 +1613,7 @@ public class Controller : MonoBehaviour
         updateView();
         // _text.text = "ready";
         // loadingFinished();
+        // yield return null;
         StopCoroutine(loadFlowers(file_path_));
     }
 

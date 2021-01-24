@@ -14,8 +14,9 @@ public class VuforiaTargetEvents : DefaultTrackableEventHandler
         // controller._text.text = flower.display;
         controller.updateActive = true;
         controller.currentFlower = flower;
-        flower.icons.transform.parent = transform;
-        flower.icons.transform.position = flower.icons.transform.parent.position;
+        Transform iconTransform = flower.icons.transform;
+        iconTransform.parent = transform;
+        iconTransform.position = iconTransform.parent.position;
         
         // controller.btn_takeScreenshot.interactable = false;
 
@@ -67,6 +68,6 @@ public class VuforiaTargetEvents : DefaultTrackableEventHandler
             yield return new WaitForEndOfFrame();
         }
         if (flower.rdy_icons)
-            StopCoroutine(activateIcons());
+            yield return null;
     }
 }
