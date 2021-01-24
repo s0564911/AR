@@ -2,9 +2,9 @@
 
 Versionsunterschiede:
 
-Full 	- Extended Tracking mit Animationen
-Limited - Limited Tracking mit Animationen
-Minimal - Limited Tracking ohne Animationen und in-screen Watering Reminder
+ - Full: Extended Tracking mit Animationen
+ - Limited: Limited Tracking mit Animationen
+ - Minimal: Limited Tracking ohne Animationen und in-screen Watering Reminder
 
 
 Projekt lässt sich in Unity importieren.
